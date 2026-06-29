@@ -1,0 +1,15 @@
+{
+  "name": "filehound-socrata-api",
+  "version": "0.1.0",
+  "description": "FileHound generic Socrata API actor — fetches daily new business filings from any Socrata-powered state open data portal",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.0.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "ws": "^8.0.0"
+  }
+}

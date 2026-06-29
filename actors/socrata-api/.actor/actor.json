@@ -1,0 +1,13 @@
+{
+  "actorSpecification": 1,
+  "name": "filehound-socrata-api",
+  "title": "FileHound — Socrata API Actor",
+  "description": "Generic Socrata open data API actor. Fetches daily new business filings from any Socrata-powered state open data portal and upserts to Supabase. Default configuration is New York. Reuse for Colorado, Connecticut, Oregon, Iowa, Pennsylvania by changing the endpoint URL and field mappings.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "defaultRunOptions": {
+    "build": "latest",
+    "timeoutSecs": 300,
+    "memoryMbytes": 256
+  }
+}
