@@ -7,9 +7,12 @@
  *
  * Data source:  sftp.floridados.gov (public — no account needed)
  * Credentials:  Username: Public | Password: PubAccess1845!
- * File path:    doc/cor/YYYYMMDDc.txt  (daily corporate filings)
+ * File path:    doc/cor/YYYYMMDDc.txt
  * File format:  Fixed-width ASCII, 1440 chars per record
- * Official field definitions: https://dos.sunbiz.org/data-definitions/cor.html
+ *
+ * Field positions verified against official definitions:
+ * https://dos.sunbiz.org/data-definitions/cor.html
+ * All positions below are 0-based (official docs use 1-based — subtract 1).
  */
 
 import { Actor } from 'apify';
@@ -29,85 +32,130 @@ const SFTP_PASS = 'PubAccess1845!';
 const SFTP_PORT = 22;
 
 const RECORD_LENGTH = 1440;
-const SOURCE_STATE = 'FL';
+const SOURCE_STATE  = 'FL';
 
 // ─── Field specification ──────────────────────────────────────────────────────
 //
-// ⚠️  VERIFY THESE POSITIONS BEFORE FIRST PRODUCTION RUN ⚠️
-//
-// Official definition: https://dos.sunbiz.org/data-definitions/cor.html
-// Run with calibrationMode: true to dump raw records for verification.
-//
-// Format: [startIndex (0-based), length]
+// Verified against: https://dos.sunbiz.org/data-definitions/cor.html
+// Format: [startIndex_0based, length]
+// Official docs are 1-based — each start here = official start minus 1.
 //
 const FIELD_SPEC = {
-  document_number:    [0,   12],
-  filing_type:        [12,   2],
-  filing_date:        [14,   8],
-  effective_date:     [22,   8],
-  entity_name:        [30, 120],
-  status_code:        [150,  1],
-  status_date:        [151,  8],
-  state_of_formation: [159,  2],
-  expiration_date:    [161,  8],
-  fei_number:         [169, 10],
-  principal_addr1:    [179, 35],
-  principal_addr2:    [214, 35],
-  principal_city:     [249, 35],
-  principal_state:    [284,  2],
-  principal_zip:      [286, 10],
-  mailing_addr1:      [296, 35],
-  mailing_addr2:      [331, 35],
-  mailing_city:       [366, 35],
-  mailing_state:      [401,  2],
-  mailing_zip:        [403, 10],
-  ra_name:            [413, 35],
-  ra_addr1:           [448, 35],
-  ra_addr2:           [483, 35],
-  ra_city:            [518, 35],
-  ra_state:           [553,  2],
-  ra_zip:             [555, 10],
-  annual_report_1:    [565,  8],
-  annual_report_2:    [573,  8],
-  annual_report_3:    [581,  8],
-  annual_report_4:    [589,  8],
-  annual_report_5:    [597,  8],
-  officer_1_name:     [645, 35],
-  officer_1_title:    [680,  4],
-  officer_1_addr1:    [684, 35],
-  officer_1_addr2:    [719, 35],
-  officer_1_city:     [754, 35],
-  officer_1_state:    [789,  2],
-  officer_1_zip:      [791, 10],
-  officer_2_name:     [801, 35],
-  officer_2_title:    [836,  4],
-  officer_2_addr1:    [840, 35],
-  officer_2_addr2:    [875, 35],
-  officer_2_city:     [910, 35],
-  officer_2_state:    [945,  2],
-  officer_2_zip:      [947, 10],
-  officer_3_name:     [957, 35],
-  officer_3_title:    [992,  4],
-  officer_3_addr1:    [996, 35],
-  officer_3_addr2:    [1031, 35],
-  officer_3_city:     [1066, 35],
-  officer_3_state:    [1101,  2],
-  officer_3_zip:      [1103, 10],
-  officer_4_name:     [1113, 35],
-  officer_4_title:    [1148,  4],
-  officer_4_addr1:    [1152, 35],
-  officer_4_addr2:    [1187, 35],
-  officer_4_city:     [1222, 35],
-  officer_4_state:    [1257,  2],
-  officer_4_zip:      [1259, 10],
-  officer_5_name:     [1269, 35],
-  officer_5_title:    [1304,  4],
-  officer_5_addr1:    [1308, 35],
-  officer_5_addr2:    [1343, 35],
-  officer_5_city:     [1378, 35],
-  officer_5_state:    [1413,  2],
-  officer_5_zip:      [1415, 10],
-  officer_6_name:     [1425, 15],
+  // Field 1  — Corporation Number (doc number / entity ID)
+  document_number:         [0,    12],
+
+  // Field 2  — Corporation Name (192 chars)
+  entity_name:             [12,  192],
+
+  // Field 3  — Status: A=Active, I=Inactive
+  status_code:             [204,   1],
+
+  // Field 4  — Filing Type: FLAL, DOMP, FORP, DOMLP, etc.
+  filing_type:             [205,  15],
+
+  // Fields 5–10 — Principal address
+  principal_addr1:         [220,  42],
+  principal_addr2:         [262,  42],
+  principal_city:          [304,  28],
+  principal_state:         [332,   2],
+  principal_zip:           [334,  10],
+  principal_country:       [344,   2],
+
+  // Fields 11–16 — Mailing address
+  mailing_addr1:           [346,  42],
+  mailing_addr2:           [388,  42],
+  mailing_city:            [430,  28],
+  mailing_state:           [458,   2],
+  mailing_zip:             [460,  10],
+  mailing_country:         [470,   2],
+
+  // Field 17 — File date of the formation filing (MMDDYYYY)
+  filing_date:             [472,   8],
+
+  // Field 18 — FEI / EIN
+  fei_number:              [480,  14],
+
+  // Field 19 — More than 6 officers flag
+  more_than_six_officers:  [494,   1],
+
+  // Field 20 — Last transaction date (MMDDYYYY)
+  last_transaction_date:   [495,   8],
+
+  // Field 21 — State/Country of formation
+  state_country:           [503,   2],
+
+  // Fields 22–30 — Annual report years and dates (3 most recent)
+  report_year_1:           [505,   4],
+  report_date_1:           [510,   8],
+  report_year_2:           [518,   4],
+  report_date_2:           [523,   8],
+  report_year_3:           [531,   4],
+  report_date_3:           [536,   8],
+
+  // Fields 31–36 — Registered Agent
+  ra_name:                 [544,  42],
+  ra_type:                 [586,   1],   // P=Person, C=Corporation
+  ra_addr1:                [587,  42],
+  ra_city:                 [629,  28],
+  ra_state:                [657,   2],
+  ra_zip:                  [659,   9],
+
+  // Fields 37–43 — Officer 1
+  officer_1_title:         [668,   4],
+  officer_1_type:          [672,   1],
+  officer_1_name:          [673,  42],
+  officer_1_addr:          [715,  42],
+  officer_1_city:          [757,  28],
+  officer_1_state:         [785,   2],
+  officer_1_zip:           [787,   9],
+
+  // Fields 44–50 — Officer 2
+  officer_2_title:         [796,   4],
+  officer_2_type:          [800,   1],
+  officer_2_name:          [801,  42],
+  officer_2_addr:          [843,  42],
+  officer_2_city:          [885,  28],
+  officer_2_state:         [913,   2],
+  officer_2_zip:           [915,   9],
+
+  // Fields 51–57 — Officer 3
+  officer_3_title:         [924,   4],
+  officer_3_type:          [928,   1],
+  officer_3_name:          [929,  42],
+  officer_3_addr:          [971,  42],
+  officer_3_city:          [1013, 28],
+  officer_3_state:         [1041,  2],
+  officer_3_zip:           [1043,  9],
+
+  // Fields 58–64 — Officer 4
+  officer_4_title:         [1052,  4],
+  officer_4_type:          [1056,  1],
+  officer_4_name:          [1057, 42],
+  officer_4_addr:          [1099, 42],
+  officer_4_city:          [1141, 28],
+  officer_4_state:         [1169,  2],
+  officer_4_zip:           [1171,  9],
+
+  // Fields 65–71 — Officer 5
+  officer_5_title:         [1180,  4],
+  officer_5_type:          [1184,  1],
+  officer_5_name:          [1185, 42],
+  officer_5_addr:          [1227, 42],
+  officer_5_city:          [1269, 28],
+  officer_5_state:         [1297,  2],
+  officer_5_zip:           [1299,  9],
+
+  // Fields 72–78 — Officer 6
+  officer_6_title:         [1308,  4],
+  officer_6_type:          [1312,  1],
+  officer_6_name:          [1313, 42],
+  officer_6_addr:          [1355, 42],
+  officer_6_city:          [1397, 28],
+  officer_6_state:         [1425,  2],
+  officer_6_zip:           [1427,  9],
+
+  // Field 79 — Filler
+  // filler:               [1436,  4],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -117,73 +165,115 @@ function field(record, name) {
   return record.substring(start, start + len).trim();
 }
 
-function parseDate(yyyymmdd) {
-  if (!yyyymmdd || yyyymmdd.trim() === '' || yyyymmdd === '00000000') return null;
-  const s = yyyymmdd.trim();
+/**
+ * Florida dates in this file are MMDDYYYY (not YYYYMMDD).
+ * Convert to ISO YYYY-MM-DD or return null if empty/invalid.
+ */
+function parseDate(mmddyyyy) {
+  if (!mmddyyyy || mmddyyyy.trim() === '' || mmddyyyy === '00000000') return null;
+  const s = mmddyyyy.trim();
   if (s.length !== 8 || !/^\d{8}$/.test(s)) return null;
-  return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  // MMDDYYYY → YYYY-MM-DD
+  return `${s.slice(4, 8)}-${s.slice(0, 2)}-${s.slice(2, 4)}`;
 }
 
 function parseStatus(code) {
-  const map = {
-    A: 'Active', I: 'Inactive', D: 'Dissolved', R: 'Revoked',
-    V: 'Voluntarily Dissolved', G: 'Administratively Dissolved', N: 'Name Reserved',
-  };
+  const map = { A: 'Active', I: 'Inactive' };
   return map[code?.trim()] ?? code?.trim() ?? 'Unknown';
+}
+
+/**
+ * Map Florida filing type codes to human-readable entity types.
+ * These come from field 4 (Filing Type) in the official spec.
+ */
+function parseEntityType(filingType) {
+  const map = {
+    'FLAL':  'LLC',
+    'FORL':  'Foreign LLC',
+    'DOMP':  'Corporation',
+    'FORP':  'Foreign Corporation',
+    'DOMNP': 'Non-Profit Corporation',
+    'FORNP': 'Foreign Non-Profit Corporation',
+    'DOMLP': 'Limited Partnership',
+    'FORLP': 'Foreign Limited Partnership',
+    'NPREG': 'Non-Profit Registration',
+    'TRUST': 'Declaration of Trust',
+    'AGENT': 'Registered Agent Designation',
+  };
+  const key = filingType?.trim();
+  return map[key] ?? key ?? 'Other';
 }
 
 function parseOfficers(record) {
   const officers = [];
   for (let i = 1; i <= 6; i++) {
-    const name = field(record, `officer_${i}_name`);
+    const name  = field(record, `officer_${i}_name`);
     const title = field(record, `officer_${i}_title`);
     if (!name) break;
     officers.push({
-      name, title,
-      address: [field(record, `officer_${i}_addr1`), field(record, `officer_${i}_addr2`)].filter(Boolean).join(', '),
-      city:  field(record, `officer_${i}_city`),
-      state: field(record, `officer_${i}_state`),
-      zip:   field(record, `officer_${i}_zip`),
+      name,
+      title,
+      address: field(record, `officer_${i}_addr`),
+      city:    field(record, `officer_${i}_city`),
+      state:   field(record, `officer_${i}_state`),
+      zip:     field(record, `officer_${i}_zip`),
     });
   }
   return officers;
 }
 
 function normalise(record) {
-  if (record.length < RECORD_LENGTH) return null;
-  const filedDate = parseDate(field(record, 'filing_date'));
-  if (!filedDate) return null;
-  const docNum = field(record, 'document_number');
-  const entityName = field(record, 'entity_name');
-  if (!docNum || !entityName) return null;
+  // Strip any trailing \r from Windows line endings
+  const r = record.replace(/\r$/, '');
+  if (r.length < RECORD_LENGTH) return null;
+
+  const docNum     = field(r, 'document_number');
+  const entityName = field(r, 'entity_name');
+  const filedDate  = parseDate(field(r, 'filing_date'));
+
+  if (!docNum || !entityName || !filedDate) return null;
+
   return {
     business_name:         entityName,
-    entity_type:           inferEntityType(docNum),
+    entity_type:           parseEntityType(field(r, 'filing_type')),
     filing_date:           filedDate,
-    street_address:        field(record, 'principal_addr1'),
-    city:                  field(record, 'principal_city'),
+    street_address:        field(r, 'principal_addr1'),
+    city:                  field(r, 'principal_city'),
     state:                 SOURCE_STATE,
-    zip:                   field(record, 'principal_zip'),
+    zip:                   field(r, 'principal_zip'),
     source_state:          SOURCE_STATE,
     state_filing_id:       docNum,
-    state_of_formation:    field(record, 'state_of_formation') || SOURCE_STATE,
-    registered_agent_name: field(record, 'ra_name'),
+    state_of_formation:    field(r, 'state_country') || SOURCE_STATE,
+    registered_agent_name: field(r, 'ra_name'),
     raw_data: {
-      fei_number:     field(record, 'fei_number'),
-      status:         parseStatus(field(record, 'status_code')),
-      status_date:    parseDate(field(record, 'status_date')),
-      effective_date: parseDate(field(record, 'effective_date')),
-      mailing_address: [field(record, 'mailing_addr1'), field(record, 'mailing_city'), field(record, 'mailing_state'), field(record, 'mailing_zip')].filter(Boolean).join(', '),
-      ra_address: [field(record, 'ra_addr1'), field(record, 'ra_city'), field(record, 'ra_state'), field(record, 'ra_zip')].filter(Boolean).join(', '),
-      officers: parseOfficers(record),
-      filing_type: field(record, 'filing_type'),
+      status:                parseStatus(field(r, 'status_code')),
+      filing_type:           field(r, 'filing_type').trim(),
+      fei_number:            field(r, 'fei_number'),
+      last_transaction_date: parseDate(field(r, 'last_transaction_date')),
+      more_than_six_officers: field(r, 'more_than_six_officers') === 'Y',
+      principal_addr2:       field(r, 'principal_addr2'),
+      mailing_address:       [
+        field(r, 'mailing_addr1'),
+        field(r, 'mailing_addr2'),
+        field(r, 'mailing_city'),
+        field(r, 'mailing_state'),
+        field(r, 'mailing_zip'),
+      ].filter(Boolean).join(', '),
+      ra_type:    field(r, 'ra_type'),
+      ra_address: [
+        field(r, 'ra_addr1'),
+        field(r, 'ra_city'),
+        field(r, 'ra_state'),
+        field(r, 'ra_zip'),
+      ].filter(Boolean).join(', '),
+      annual_reports: [
+        { year: field(r, 'report_year_1'), date: parseDate(field(r, 'report_date_1')) },
+        { year: field(r, 'report_year_2'), date: parseDate(field(r, 'report_date_2')) },
+        { year: field(r, 'report_year_3'), date: parseDate(field(r, 'report_date_3')) },
+      ].filter(ar => ar.year),
+      officers: parseOfficers(r),
     },
   };
-}
-
-function inferEntityType(docNum) {
-  const map = { L: 'LLC', P: 'Corporation', N: 'Non-Profit Corporation', F: 'Foreign Entity', M: 'Limited Partnership', Z: 'Limited Liability Limited Partnership' };
-  return map[docNum?.[0]?.toUpperCase()] ?? 'Other';
 }
 
 /** Build the SFTP remote file path — no leading slash. */
@@ -192,6 +282,7 @@ function buildSftpPath(date) {
   return `doc/cor/${d}c.txt`;
 }
 
+/** Return today's date as YYYY-MM-DD in US Eastern time. */
 function todayEastern() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
@@ -230,35 +321,18 @@ try {
     host: SFTP_HOST, port: SFTP_PORT, username: SFTP_USER, password: SFTP_PASS,
   });
 
-  // ── 2. In calibration mode, list directories first to confirm paths ─────────
-  if (calibrationMode) {
-    console.log('--- CALIBRATION MODE: listing server directories ---');
-    try {
-      const rootList = await sftp.list('.');
-      console.log('Root directory contents:', JSON.stringify(rootList.map(f => f.name)));
-      try {
-        const docList = await sftp.list('doc');
-        console.log('doc/ contents:', JSON.stringify(docList.map(f => f.name)));
-        try {
-          const corList = await sftp.list('doc/cor');
-          console.log('doc/cor/ contents (first 10):', JSON.stringify(corList.slice(0, 10).map(f => f.name)));
-        } catch (e) { console.log('Could not list doc/cor:', e.message); }
-      } catch (e) { console.log('Could not list doc/:', e.message); }
-    } catch (e) { console.log('Could not list root:', e.message); }
-  }
-
-  // ── 3. Download the daily file ──────────────────────────────────────────────
+  // ── 2. Download the daily file ──────────────────────────────────────────────
   const remotePath = buildSftpPath(runDate);
-  console.log(`Attempting to download: ${remotePath}`);
+  console.log(`Downloading ${remotePath}...`);
 
   let fileBuffer;
   try {
     fileBuffer = await sftp.get(remotePath);
   } catch (err) {
     if (err.message?.includes('No such file') || err.code === 2) {
-      console.log(`No file found at ${remotePath} — may be weekend, holiday, or wrong path.`);
+      console.log(`No file for ${targetDate} (weekend or holiday). Exiting cleanly.`);
       await sftp.end();
-      await logScrapeRun({ supabase, status: 'success', recordsFound: 0, recordsInserted: 0, errorMessage: 'No file found', durationMs: Date.now() - startMs });
+      await logScrapeRun({ supabase, status: 'success', recordsFound: 0, recordsInserted: 0, errorMessage: 'No file (weekend/holiday)', durationMs: Date.now() - startMs });
       await Actor.exit();
     }
     throw err;
@@ -271,45 +345,58 @@ try {
   console.log(`Downloaded ${lines.length} records.`);
   recordsFound = lines.length;
 
-  // ── 4. Calibration: dump raw records ────────────────────────────────────────
+  // ── 3. Calibration mode ─────────────────────────────────────────────────────
   if (calibrationMode) {
+    console.log('--- CALIBRATION MODE (field positions verified against official docs) ---');
     const sample = lines.slice(0, 5);
     for (const [i, line] of sample.entries()) {
-      console.log(`\n--- Record ${i + 1} (${line.length} chars) ---`);
-      console.log(`Raw: ${line}`);
-      console.log('Field attempts:');
-      for (const [name, [start, len]] of Object.entries(FIELD_SPEC)) {
-        const val = line.substring(start, start + len).trim();
-        if (val) console.log(`  [${start}:${start + len}] ${name}: "${val}"`);
-      }
+      const r = line.replace(/\r$/, '');
+      console.log(`\n--- Record ${i + 1} (${r.length} chars) ---`);
+      console.log(`document_number: "${field(r, 'document_number')}"`);
+      console.log(`entity_name:     "${field(r, 'entity_name')}"`);
+      console.log(`status_code:     "${field(r, 'status_code')}"`);
+      console.log(`filing_type:     "${field(r, 'filing_type')}"`);
+      console.log(`filing_date:     "${field(r, 'filing_date')}" → ${parseDate(field(r, 'filing_date'))}`);
+      console.log(`principal_addr1: "${field(r, 'principal_addr1')}"`);
+      console.log(`principal_city:  "${field(r, 'principal_city')}"`);
+      console.log(`principal_state: "${field(r, 'principal_state')}"`);
+      console.log(`principal_zip:   "${field(r, 'principal_zip')}"`);
+      console.log(`ra_name:         "${field(r, 'ra_name')}"`);
+      console.log(`officer_1_name:  "${field(r, 'officer_1_name')}"`);
+      console.log(`officer_1_title: "${field(r, 'officer_1_title')}"`);
     }
-    await Actor.pushData(sample.map((raw, i) => ({
-      record_index: i + 1,
-      raw_length: raw.length,
-      raw,
-      field_attempts: Object.fromEntries(Object.entries(FIELD_SPEC).map(([name, [start, len]]) => [name, raw.substring(start, start + len).trim()])),
-    })));
+    await Actor.pushData(sample.map((raw, i) => {
+      const r = raw.replace(/\r$/, '');
+      return {
+        record_index: i + 1,
+        raw_length: r.length,
+        parsed: normalise(r),
+      };
+    }));
     await Actor.exit();
   }
 
-  // ── 5. Parse and normalise ──────────────────────────────────────────────────
+  // ── 4. Parse and normalise ──────────────────────────────────────────────────
   const normalised = [];
   for (const line of lines) {
     const record = normalise(line);
     if (record) normalised.push(record);
   }
-  console.log(`Parsed ${normalised.length} valid records.`);
+  console.log(`Parsed ${normalised.length} valid records from ${lines.length} raw lines.`);
 
   if (dryRun) {
+    console.log('Dry run — skipping Supabase upsert.');
     await Actor.pushData(normalised.slice(0, 20));
     await Actor.exit();
   }
 
-  // ── 6. Upsert to Supabase ───────────────────────────────────────────────────
+  // ── 5. Upsert to Supabase ───────────────────────────────────────────────────
   const BATCH_SIZE = 500;
   for (let i = 0; i < normalised.length; i += BATCH_SIZE) {
     const batch = normalised.slice(i, i + BATCH_SIZE);
-    const { error } = await supabase.from('filings').upsert(batch, { onConflict: 'source_state,state_filing_id', ignoreDuplicates: false });
+    const { error } = await supabase
+      .from('filings')
+      .upsert(batch, { onConflict: 'source_state,state_filing_id', ignoreDuplicates: false });
     if (error) {
       console.error(`Batch ${i} upsert error:`, error.message);
       status = 'partial';
@@ -328,7 +415,7 @@ try {
   try { await sftp.end(); } catch {}
 }
 
-// ── 7. Log to scrape_runs ────────────────────────────────────────────────────
+// ── 6. Log to scrape_runs ────────────────────────────────────────────────────
 await logScrapeRun({ supabase, status, recordsFound, recordsInserted, errorMessage, durationMs: Date.now() - startMs });
 
 if (status === 'failed') throw new Error(`Actor failed: ${errorMessage}`);
