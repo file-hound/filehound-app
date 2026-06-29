@@ -1,7 +1,7 @@
 {
   "name": "filehound-florida-sftp",
   "version": "0.1.0",
-  "description": "FileHound Florida SFTP actor — downloads daily corporate filings from Sunbiz",
+  "description": "FileHound Florida SFTP actor",
   "type": "module",
   "main": "src/main.js",
   "scripts": {
@@ -10,6 +10,7 @@
   "dependencies": {
     "apify": "^3.0.0",
     "ssh2-sftp-client": "^10.0.0",
-    "@supabase/supabase-js": "^2.0.0"
+    "@supabase/supabase-js": "^2.0.0",
+    "ws": "^8.0.0"
   }
 }
