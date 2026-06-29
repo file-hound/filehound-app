@@ -1,0 +1,14 @@
+{
+  "actorSpecification": 1,
+  "name": "filehound-florida-sftp",
+  "title": "FileHound — Florida SFTP Actor",
+  "description": "Downloads daily corporate filing data from the Florida Division of Corporations public SFTP server, normalises records to the FileHound schema, and upserts to Supabase.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "environmentVariables": [],
+  "defaultRunOptions": {
+    "build": "latest",
+    "timeoutSecs": 600,
+    "memoryMbytes": 512
+  }
+}

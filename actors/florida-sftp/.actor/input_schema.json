@@ -1,0 +1,43 @@
+{
+  "title": "FileHound — Florida SFTP Actor Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "targetDate": {
+      "title": "Target date",
+      "type": "string",
+      "description": "Date to fetch in YYYY-MM-DD format. Defaults to today (US/Eastern). Use for backfill.",
+      "editor": "textfield",
+      "example": "2026-06-27"
+    },
+    "supabaseUrl": {
+      "title": "Supabase URL",
+      "type": "string",
+      "description": "Your Supabase project URL (e.g. https://abc.supabase.co)",
+      "editor": "textfield",
+      "isSecret": false
+    },
+    "supabaseServiceKey": {
+      "title": "Supabase service role key",
+      "type": "string",
+      "description": "Supabase service role key (not the anon key). Keep this secret.",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "calibrationMode": {
+      "title": "Calibration mode",
+      "type": "boolean",
+      "description": "If true, downloads the file and dumps the first 5 raw records to the dataset for field position verification. Does NOT upsert to Supabase. Run this once when first setting up to verify field positions against the official Corporate File Definitions page.",
+      "default": false,
+      "editor": "checkbox"
+    },
+    "dryRun": {
+      "title": "Dry run",
+      "type": "boolean",
+      "description": "If true, parses and normalises records but does NOT upsert to Supabase. Useful for testing the parser.",
+      "default": false,
+      "editor": "checkbox"
+    }
+  },
+  "required": ["supabaseUrl", "supabaseServiceKey"]
+}
