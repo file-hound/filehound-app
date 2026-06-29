@@ -7,14 +7,9 @@
  *
  * Data source:  sftp.floridados.gov (public — no account needed)
  * Credentials:  Username: Public | Password: PubAccess1845!
- * File path:    /doc/cor/YYYYMMDDc.txt  (daily corporate filings)
+ * File path:    doc/cor/YYYYMMDDc.txt  (daily corporate filings)
  * File format:  Fixed-width ASCII, 1440 chars per record
  * Official field definitions: https://dos.sunbiz.org/data-definitions/cor.html
- *   → Open that page in a browser and verify FIELD_SPEC below before
- *     running this actor in production for the first time.
- *
- * Build sequence: this is actor #1. The normalise() and upsert() functions
- * defined here are the template for every other state actor.
  */
 
 import { Actor } from 'apify';
@@ -33,62 +28,50 @@ const SFTP_USER = 'Public';
 const SFTP_PASS = 'PubAccess1845!';
 const SFTP_PORT = 22;
 
-const RECORD_LENGTH = 1440; // chars per record (confirmed in official docs)
+const RECORD_LENGTH = 1440;
 const SOURCE_STATE = 'FL';
 
 // ─── Field specification ──────────────────────────────────────────────────────
 //
 // ⚠️  VERIFY THESE POSITIONS BEFORE FIRST PRODUCTION RUN ⚠️
 //
-// The official definition is at: https://dos.sunbiz.org/data-definitions/cor.html
-// Run the actor once in calibrationMode: true to download a real file and
-// inspect the raw bytes. Compare against the official page and fix any offsets.
+// Official definition: https://dos.sunbiz.org/data-definitions/cor.html
+// Run with calibrationMode: true to dump raw records for verification.
 //
 // Format: [startIndex (0-based), length]
 //
 const FIELD_SPEC = {
-  // ── Core entity fields ─────────────────────────────────────────────────────
-  document_number:    [0,   12],   // e.g. "L01000001234" — unique entity ID
-  filing_type:        [12,   2],   // record type code
-  filing_date:        [14,   8],   // YYYYMMDD — date entered into database
-  effective_date:     [22,   8],   // YYYYMMDD — legal effective date
-  entity_name:        [30, 120],   // business name
-  status_code:        [150,  1],   // A=Active, I=Inactive, D=Dissolved, R=Revoked
-  status_date:        [151,  8],   // YYYYMMDD
-  state_of_formation: [159,  2],   // 2-letter state code
-  expiration_date:    [161,  8],   // YYYYMMDD
-  fei_number:         [169, 10],   // Federal Employer Identification Number
-
-  // ── Principal address ──────────────────────────────────────────────────────
+  document_number:    [0,   12],
+  filing_type:        [12,   2],
+  filing_date:        [14,   8],
+  effective_date:     [22,   8],
+  entity_name:        [30, 120],
+  status_code:        [150,  1],
+  status_date:        [151,  8],
+  state_of_formation: [159,  2],
+  expiration_date:    [161,  8],
+  fei_number:         [169, 10],
   principal_addr1:    [179, 35],
   principal_addr2:    [214, 35],
   principal_city:     [249, 35],
   principal_state:    [284,  2],
   principal_zip:      [286, 10],
-
-  // ── Mailing address ────────────────────────────────────────────────────────
   mailing_addr1:      [296, 35],
   mailing_addr2:      [331, 35],
   mailing_city:       [366, 35],
   mailing_state:      [401,  2],
   mailing_zip:        [403, 10],
-
-  // ── Registered agent ──────────────────────────────────────────────────────
   ra_name:            [413, 35],
   ra_addr1:           [448, 35],
   ra_addr2:           [483, 35],
   ra_city:            [518, 35],
   ra_state:           [553,  2],
   ra_zip:             [555, 10],
-
-  // ── Annual report years ───────────────────────────────────────────────────
   annual_report_1:    [565,  8],
   annual_report_2:    [573,  8],
   annual_report_3:    [581,  8],
   annual_report_4:    [589,  8],
   annual_report_5:    [597,  8],
-
-  // ── Officer sets (up to 6) ────────────────────────────────────────────────
   officer_1_name:     [645, 35],
   officer_1_title:    [680,  4],
   officer_1_addr1:    [684, 35],
@@ -96,7 +79,6 @@ const FIELD_SPEC = {
   officer_1_city:     [754, 35],
   officer_1_state:    [789,  2],
   officer_1_zip:      [791, 10],
-
   officer_2_name:     [801, 35],
   officer_2_title:    [836,  4],
   officer_2_addr1:    [840, 35],
@@ -104,7 +86,6 @@ const FIELD_SPEC = {
   officer_2_city:     [910, 35],
   officer_2_state:    [945,  2],
   officer_2_zip:      [947, 10],
-
   officer_3_name:     [957, 35],
   officer_3_title:    [992,  4],
   officer_3_addr1:    [996, 35],
@@ -112,7 +93,6 @@ const FIELD_SPEC = {
   officer_3_city:     [1066, 35],
   officer_3_state:    [1101,  2],
   officer_3_zip:      [1103, 10],
-
   officer_4_name:     [1113, 35],
   officer_4_title:    [1148,  4],
   officer_4_addr1:    [1152, 35],
@@ -120,7 +100,6 @@ const FIELD_SPEC = {
   officer_4_city:     [1222, 35],
   officer_4_state:    [1257,  2],
   officer_4_zip:      [1259, 10],
-
   officer_5_name:     [1269, 35],
   officer_5_title:    [1304,  4],
   officer_5_addr1:    [1308, 35],
@@ -128,19 +107,16 @@ const FIELD_SPEC = {
   officer_5_city:     [1378, 35],
   officer_5_state:    [1413,  2],
   officer_5_zip:      [1415, 10],
-
   officer_6_name:     [1425, 15],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Extract a field from a fixed-width record and trim whitespace. */
 function field(record, name) {
   const [start, len] = FIELD_SPEC[name];
   return record.substring(start, start + len).trim();
 }
 
-/** Convert a YYYYMMDD string to an ISO date string, or null if empty/invalid. */
 function parseDate(yyyymmdd) {
   if (!yyyymmdd || yyyymmdd.trim() === '' || yyyymmdd === '00000000') return null;
   const s = yyyymmdd.trim();
@@ -148,21 +124,14 @@ function parseDate(yyyymmdd) {
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
 }
 
-/** Map single-char status codes to human-readable strings. */
 function parseStatus(code) {
   const map = {
-    A: 'Active',
-    I: 'Inactive',
-    D: 'Dissolved',
-    R: 'Revoked',
-    V: 'Voluntarily Dissolved',
-    G: 'Administratively Dissolved',
-    N: 'Name Reserved',
+    A: 'Active', I: 'Inactive', D: 'Dissolved', R: 'Revoked',
+    V: 'Voluntarily Dissolved', G: 'Administratively Dissolved', N: 'Name Reserved',
   };
   return map[code?.trim()] ?? code?.trim() ?? 'Unknown';
 }
 
-/** Collect up to 6 officers from a record into an array. */
 function parseOfficers(record) {
   const officers = [];
   for (let i = 1; i <= 6; i++) {
@@ -170,12 +139,8 @@ function parseOfficers(record) {
     const title = field(record, `officer_${i}_title`);
     if (!name) break;
     officers.push({
-      name,
-      title,
-      address: [
-        field(record, `officer_${i}_addr1`),
-        field(record, `officer_${i}_addr2`),
-      ].filter(Boolean).join(', '),
+      name, title,
+      address: [field(record, `officer_${i}_addr1`), field(record, `officer_${i}_addr2`)].filter(Boolean).join(', '),
       city:  field(record, `officer_${i}_city`),
       state: field(record, `officer_${i}_state`),
       zip:   field(record, `officer_${i}_zip`),
@@ -184,21 +149,13 @@ function parseOfficers(record) {
   return officers;
 }
 
-/** Normalise a raw record line into the FileHound schema. */
 function normalise(record) {
   if (record.length < RECORD_LENGTH) return null;
-
-  const officers = parseOfficers(record);
-  const filedDateRaw = field(record, 'filing_date');
-  const filedDate = parseDate(filedDateRaw);
-
+  const filedDate = parseDate(field(record, 'filing_date'));
   if (!filedDate) return null;
-
   const docNum = field(record, 'document_number');
   const entityName = field(record, 'entity_name');
-
   if (!docNum || !entityName) return null;
-
   return {
     business_name:         entityName,
     entity_type:           inferEntityType(docNum),
@@ -216,48 +173,25 @@ function normalise(record) {
       status:         parseStatus(field(record, 'status_code')),
       status_date:    parseDate(field(record, 'status_date')),
       effective_date: parseDate(field(record, 'effective_date')),
-      mailing_address: [
-        field(record, 'mailing_addr1'),
-        field(record, 'mailing_city'),
-        field(record, 'mailing_state'),
-        field(record, 'mailing_zip'),
-      ].filter(Boolean).join(', '),
-      ra_address: [
-        field(record, 'ra_addr1'),
-        field(record, 'ra_city'),
-        field(record, 'ra_state'),
-        field(record, 'ra_zip'),
-      ].filter(Boolean).join(', '),
-      officers,
+      mailing_address: [field(record, 'mailing_addr1'), field(record, 'mailing_city'), field(record, 'mailing_state'), field(record, 'mailing_zip')].filter(Boolean).join(', '),
+      ra_address: [field(record, 'ra_addr1'), field(record, 'ra_city'), field(record, 'ra_state'), field(record, 'ra_zip')].filter(Boolean).join(', '),
+      officers: parseOfficers(record),
       filing_type: field(record, 'filing_type'),
     },
   };
 }
 
-/**
- * Infer entity type from the document number prefix.
- *   L = LLC, P = Profit Corp, N = Non-Profit, F = Foreign, M = LP
- */
 function inferEntityType(docNum) {
-  const prefix = docNum?.[0]?.toUpperCase();
-  const map = {
-    L: 'LLC',
-    P: 'Corporation',
-    N: 'Non-Profit Corporation',
-    F: 'Foreign Entity',
-    M: 'Limited Partnership',
-    Z: 'Limited Liability Limited Partnership',
-  };
-  return map[prefix] ?? 'Other';
+  const map = { L: 'LLC', P: 'Corporation', N: 'Non-Profit Corporation', F: 'Foreign Entity', M: 'Limited Partnership', Z: 'Limited Liability Limited Partnership' };
+  return map[docNum?.[0]?.toUpperCase()] ?? 'Other';
 }
 
-/** Build the SFTP remote file path for a given date. */
+/** Build the SFTP remote file path — no leading slash. */
 function buildSftpPath(date) {
   const d = date.toISOString().slice(0, 10).replace(/-/g, '');
-  return `/doc/cor/${d}c.txt`;
+  return `doc/cor/${d}c.txt`;
 }
 
-/** Return today's date as YYYY-MM-DD in US Eastern time. */
 function todayEastern() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
@@ -293,31 +227,38 @@ try {
   // ── 1. Connect to SFTP ──────────────────────────────────────────────────────
   console.log(`Connecting to ${SFTP_HOST}...`);
   await sftp.connect({
-    host:     SFTP_HOST,
-    port:     SFTP_PORT,
-    username: SFTP_USER,
-    password: SFTP_PASS,
+    host: SFTP_HOST, port: SFTP_PORT, username: SFTP_USER, password: SFTP_PASS,
   });
 
-  // ── 2. Download the daily file ──────────────────────────────────────────────
+  // ── 2. In calibration mode, list directories first to confirm paths ─────────
+  if (calibrationMode) {
+    console.log('--- CALIBRATION MODE: listing server directories ---');
+    try {
+      const rootList = await sftp.list('.');
+      console.log('Root directory contents:', JSON.stringify(rootList.map(f => f.name)));
+      try {
+        const docList = await sftp.list('doc');
+        console.log('doc/ contents:', JSON.stringify(docList.map(f => f.name)));
+        try {
+          const corList = await sftp.list('doc/cor');
+          console.log('doc/cor/ contents (first 10):', JSON.stringify(corList.slice(0, 10).map(f => f.name)));
+        } catch (e) { console.log('Could not list doc/cor:', e.message); }
+      } catch (e) { console.log('Could not list doc/:', e.message); }
+    } catch (e) { console.log('Could not list root:', e.message); }
+  }
+
+  // ── 3. Download the daily file ──────────────────────────────────────────────
   const remotePath = buildSftpPath(runDate);
-  console.log(`Downloading ${remotePath}...`);
+  console.log(`Attempting to download: ${remotePath}`);
 
   let fileBuffer;
   try {
     fileBuffer = await sftp.get(remotePath);
   } catch (err) {
     if (err.message?.includes('No such file') || err.code === 2) {
-      console.log(`No file for ${targetDate} (weekend or holiday). Exiting cleanly.`);
+      console.log(`No file found at ${remotePath} — may be weekend, holiday, or wrong path.`);
       await sftp.end();
-      await logScrapeRun({
-        supabase,
-        status: 'success',
-        recordsFound: 0,
-        recordsInserted: 0,
-        errorMessage: 'No file (weekend/holiday)',
-        durationMs: Date.now() - startMs,
-      });
+      await logScrapeRun({ supabase, status: 'success', recordsFound: 0, recordsInserted: 0, errorMessage: 'No file found', durationMs: Date.now() - startMs });
       await Actor.exit();
     }
     throw err;
@@ -327,104 +268,70 @@ try {
 
   const fileContent = fileBuffer.toString('latin1');
   const lines       = fileContent.split('\n').filter(l => l.length > 0);
-
   console.log(`Downloaded ${lines.length} records.`);
   recordsFound = lines.length;
 
-  // ── 3. Calibration mode ─────────────────────────────────────────────────────
+  // ── 4. Calibration: dump raw records ────────────────────────────────────────
   if (calibrationMode) {
-    console.log('--- CALIBRATION MODE ---');
-    console.log('Dumping first 5 raw records. Compare against:');
-    console.log('  https://dos.sunbiz.org/data-definitions/cor.html');
-
     const sample = lines.slice(0, 5);
     for (const [i, line] of sample.entries()) {
       console.log(`\n--- Record ${i + 1} (${line.length} chars) ---`);
       console.log(`Raw: ${line}`);
-      console.log('\nField attempts:');
+      console.log('Field attempts:');
       for (const [name, [start, len]] of Object.entries(FIELD_SPEC)) {
         const val = line.substring(start, start + len).trim();
         if (val) console.log(`  [${start}:${start + len}] ${name}: "${val}"`);
       }
     }
-
     await Actor.pushData(sample.map((raw, i) => ({
       record_index: i + 1,
-      raw_length:   raw.length,
+      raw_length: raw.length,
       raw,
-      field_attempts: Object.fromEntries(
-        Object.entries(FIELD_SPEC).map(([name, [start, len]]) => [
-          name,
-          raw.substring(start, start + len).trim(),
-        ])
-      ),
+      field_attempts: Object.fromEntries(Object.entries(FIELD_SPEC).map(([name, [start, len]]) => [name, raw.substring(start, start + len).trim()])),
     })));
-
     await Actor.exit();
   }
 
-  // ── 4. Parse and normalise ──────────────────────────────────────────────────
+  // ── 5. Parse and normalise ──────────────────────────────────────────────────
   const normalised = [];
   for (const line of lines) {
     const record = normalise(line);
     if (record) normalised.push(record);
   }
-
-  console.log(`Parsed ${normalised.length} valid records from ${lines.length} raw lines.`);
+  console.log(`Parsed ${normalised.length} valid records.`);
 
   if (dryRun) {
-    console.log('Dry run — skipping Supabase upsert.');
     await Actor.pushData(normalised.slice(0, 20));
     await Actor.exit();
   }
 
-  // ── 5. Upsert to Supabase ───────────────────────────────────────────────────
+  // ── 6. Upsert to Supabase ───────────────────────────────────────────────────
   const BATCH_SIZE = 500;
   for (let i = 0; i < normalised.length; i += BATCH_SIZE) {
     const batch = normalised.slice(i, i + BATCH_SIZE);
-
-    const { error } = await supabase
-      .from('filings')
-      .upsert(batch, {
-        onConflict: 'source_state,state_filing_id',
-        ignoreDuplicates: false,
-      });
-
+    const { error } = await supabase.from('filings').upsert(batch, { onConflict: 'source_state,state_filing_id', ignoreDuplicates: false });
     if (error) {
-      console.error(`Batch ${i}-${i + BATCH_SIZE} upsert error:`, error.message);
+      console.error(`Batch ${i} upsert error:`, error.message);
       status = 'partial';
       errorMessage = error.message;
     } else {
       recordsInserted += batch.length;
     }
-
-    if (i + BATCH_SIZE < normalised.length) {
-      await new Promise(r => setTimeout(r, 200));
-    }
+    if (i + BATCH_SIZE < normalised.length) await new Promise(r => setTimeout(r, 200));
   }
-
   console.log(`Upserted ${recordsInserted} records to Supabase.`);
 
 } catch (err) {
   console.error('Actor error:', err.message);
-  status       = 'failed';
+  status = 'failed';
   errorMessage = err.message;
   try { await sftp.end(); } catch {}
 }
 
-// ── 6. Log to scrape_runs ────────────────────────────────────────────────────
-await logScrapeRun({
-  supabase,
-  status,
-  recordsFound,
-  recordsInserted,
-  errorMessage,
-  durationMs: Date.now() - startMs,
-});
+// ── 7. Log to scrape_runs ────────────────────────────────────────────────────
+await logScrapeRun({ supabase, status, recordsFound, recordsInserted, errorMessage, durationMs: Date.now() - startMs });
 
-if (status === 'failed') {
-  throw new Error(`Actor failed: ${errorMessage}`);
-}
+if (status === 'failed') throw new Error(`Actor failed: ${errorMessage}`);
 
 await Actor.exit();
 
@@ -433,12 +340,9 @@ await Actor.exit();
 async function logScrapeRun({ supabase, status, recordsFound, recordsInserted, errorMessage, durationMs }) {
   try {
     const { error } = await supabase.from('scrape_runs').insert({
-      state:            SOURCE_STATE,
-      status,
-      records_found:    recordsFound,
-      records_inserted: recordsInserted,
-      error_message:    errorMessage,
-      duration_ms:      durationMs,
+      state: SOURCE_STATE, status,
+      records_found: recordsFound, records_inserted: recordsInserted,
+      error_message: errorMessage, duration_ms: durationMs,
     });
     if (error) console.error('Failed to log scrape_run:', error.message);
   } catch (err) {
