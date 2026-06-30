@@ -90,6 +90,61 @@ This section is the source of truth for states that have been live-tested end to
 
 ---
 
+## Dead ends and partial progress (2026-06-30 research session)
+
+These states were investigated live tonight. None are production-ready yet, but the findings below save significant time on the next attempt — each one rules out a wrong path or identifies the real path forward.
+
+### Oregon — NOT a daily source (reclassify within Tier 2)
+
+| Field | Value |
+|-------|-------|
+| **Status** | ❌ Dead end — dataset confirmed to be a MONTHLY snapshot, not daily |
+| **Dataset tested** | `https://data.oregon.gov/resource/esjy-u4fc.json` ("New Businesses Registered Last Month") |
+| **Finding** | Every record in a given pull shares the exact same `registry_date` (e.g. all 1,923 May records show `2026-05-01`). The dataset stamps every entity from the month with the 1st of that month — there is no day-level granularity. |
+| **Code built** | `groupMultiRowEntities` flag added to `socrata-api` actor — correctly collapses Oregon's one-row-per-Associated-Name-Type structure (PRINCIPAL PLACE OF BUSINESS, REGISTERED AGENT, MEMBER, etc., all sharing a Registry Number) into one clean record per entity. This code is reusable if a true daily OR source is found. |
+| **Next step** | Search for a different Oregon dataset with real daily granularity, or evaluate the sos.oregon.gov portal directly for a date-range search (Tier 3 portal scrape). Do NOT reuse `esjy-u4fc` or `qzxy-edyf` for daily ingestion. |
+
+### Iowa — NOT a daily source
+
+| Field | Value |
+|-------|-------|
+| **Status** | ❌ Dead end — confirmed monthly via Iowa's own data catalog metadata |
+| **Dataset tested** | `ez5t-3qay` ("Active Iowa Business Entities") |
+| **Finding** | Iowa's own catalog entry states verbatim: *"Data is updated monthly. Updates are typically available at the start of every month."* Confirmed directly from official metadata, no live API call needed. |
+| **Next step** | No free daily Iowa source identified yet. Iowa's paid API ($2,400/year) updates daily but is expensive — revisit only if Iowa volume justifies the cost once FileHound has revenue. Otherwise deprioritize. |
+
+### Pennsylvania — NOT a daily filing feed
+
+| Field | Value |
+|-------|-------|
+| **Status** | ❌ Dead end — dataset is a full historical snapshot, not a new-filing feed |
+| **Dataset tested** | `xvd7-5r2c` ("Registered Businesses in PA Current by County") |
+| **Finding** | `Creation Date` field spans from the 1700s to present — this is every currently-active business ever registered, not a daily new-filings stream. Filtering this huge table by "today's date" would technically work but means scanning the entire historical dataset on every run, which is impractical. |
+| **Next step** | Evaluate the file.dos.pa.gov portal directly (confirmed to have date-range search in its advanced search per earlier research) as a Tier 3 portal scrape instead. |
+
+### Texas — real path identified, needs a business decision
+
+| Field | Value |
+|-------|-------|
+| **Status** | ⚠️ Official paid product found — NOT yet built |
+| **Finding** | The `data.texas.gov` dataset (`9cir-efmm`) we'd planned to use turned out to actually live on `data.austintexas.gov` — an Austin city portal, not Texas statewide data. That entire avenue should be discarded. |
+| **Real solution found** | Texas SOS sells an official **"Daily Filing Update"** subscription via SOSDirect bulk orders: **$60/month**, fixed-width text file containing every database update for a specific day. Also a cheaper **Weekly Subscription New Filings** option at $20/month (comma-delimited, weekly only — too infrequent for FileHound's daily promise). |
+| **Data included** | Legal business name, entity type, formation date, registered agent name + address, initial directors/managing members. Does NOT reliably include principal address or tax ID (supplemental, not always present). |
+| **Next step** | Business decision: sign up for SOSDirect account, subscribe to Daily Filing Update ($60/mo), then build a fixed-width parser actor similar to the Florida SFTP actor (same general pattern — paid subscription instead of free SFTP, but same file-based parsing approach). Record layout is available for free download once an account exists. |
+
+### Idaho — undocumented API found, partially working
+
+| Field | Value |
+|-------|-------|
+| **Status** | ⚠️ In progress — API call succeeds (HTTP 200) but date-only query returns empty `rows: {}` |
+| **Actor folder** | `actors/idaho-sosbiz/` |
+| **Endpoint found** | `POST https://sosbiz.idaho.gov/api/Records/businesssearch` — public, no auth required, discovered via third-party reverse-engineering (not official Idaho documentation) |
+| **Confirmed working** | The API responds correctly and returns its expected shape: `{ template: [...], rows: {...} }`. The `template` field correctly lists columns: Form Info/Title, Status, Filing Date, Agent. |
+| **Finding** | An empty `SEARCH_VALUE` with only a `FILING_DATE` range returns zero rows — the API appears to require an actual name/keyword search term and cannot "browse all filings on date X" with no name filter. |
+| **Next step** | Two options to try next: (1) loop through single-letter or two-letter `SEARCH_VALUE` queries (A, B, C... or AA, AB...) combined with `STARTS_WITH_YN: true` and the date filter, similar to the alphabetical-sweep approach needed for Alabama/Georgia; or (2) investigate whether the per-entity detail endpoint (`/api/FilingDetail/business/{id}/false`) reveals a way to page through by ID range instead. This is the same "sequential/alphabetical sweep" pattern already anticipated for AL, AZ, GA, VA — Idaho may need to join that group despite initially looking like the cleanest Tier 3 state. |
+
+---
+
 ## State-by-state reference
 
 ### Alabama
@@ -852,3 +907,5 @@ The following 13 states were flagged for verification. Status after June 2026 re
 *Last updated: June 2026. Verify all portal URLs and API endpoints before building — state portals update periodically.*
 
 **Verification progress: 4 of 50 states confirmed live (FL, NY, CO, CT).** See "Verified production configurations" section near the top of this document for exact endpoints, field mappings, and Apify input JSON for each. Update that section every time a new state goes live — it is the source of truth, not chat history.
+
+**Research session 2026-06-30:** Investigated OR, IA, PA, TX, ID. None went live, but each yielded a concrete finding (see "Dead ends and partial progress" section above): OR/IA/PA confirmed NOT viable as daily Socrata sources (monthly snapshots) — this is valuable negative information that prevents wasted future build effort. TX's real path is a $60/month official SOSDirect subscription, not the free Socrata dataset we'd assumed. ID has a working but incomplete API requiring an alphabetical-sweep workaround, joining AL/AZ/GA/VA in that category.
