@@ -1,0 +1,13 @@
+{
+  "actorSpecification": 1,
+  "name": "filehound-sequential-id",
+  "title": "FileHound — Sequential Entity ID Sweep Actor",
+  "description": "Generic actor for states with no date-range search but sequential entity IDs (Alabama, Arizona, Georgia, Virginia, Idaho). Tracks a cursor from the highest ID already collected, walks forward fetching entity detail pages by ID, and stops once it hits a run of not-yet-issued IDs. HTML parsing via configurable CSS selectors.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "defaultRunOptions": {
+    "build": "latest",
+    "timeoutSecs": 600,
+    "memoryMbytes": 512
+  }
+}

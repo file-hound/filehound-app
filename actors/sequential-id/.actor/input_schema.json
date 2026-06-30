@@ -1,0 +1,101 @@
+{
+  "title": "FileHound — Sequential Entity ID Sweep Actor Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "sourceState": {
+      "title": "Source state (2-letter code)",
+      "type": "string",
+      "description": "The state this actor is fetching. Used as source_state in Supabase.",
+      "editor": "textfield",
+      "example": "AL"
+    },
+    "idUrlTemplate": {
+      "title": "Entity detail URL template",
+      "type": "string",
+      "description": "URL for a single entity's detail page. Use {ID} as a placeholder for the entity ID.",
+      "editor": "textfield",
+      "example": "https://arc-sos.state.al.us/CGI/CORPENTITY.MBR/OUTPUT?ENTITY_ID={ID}"
+    },
+    "idPadLength": {
+      "title": "ID zero-pad length",
+      "type": "integer",
+      "description": "If the state's IDs are fixed-width with leading zeros (e.g. Alabama's 9-digit format), set the total digit length here. Leave 0 to use the ID as-is.",
+      "default": 0,
+      "editor": "number"
+    },
+    "startId": {
+      "title": "Starting entity ID (first run only)",
+      "type": "integer",
+      "description": "Used only if no prior records exist for this state in Supabase. On subsequent runs the actor automatically resumes from the highest ID already collected.",
+      "editor": "number",
+      "example": 256000000
+    },
+    "sweepCount": {
+      "title": "IDs to check this run",
+      "type": "integer",
+      "description": "How many sequential IDs to attempt in a single run, starting from the cursor.",
+      "default": 200,
+      "editor": "number"
+    },
+    "consecutiveMissesToStop": {
+      "title": "Consecutive misses before stopping early",
+      "type": "integer",
+      "description": "If this many IDs in a row return 'not found', stop the sweep early (we've likely caught up to not-yet-issued IDs).",
+      "default": 30,
+      "editor": "number"
+    },
+    "requestDelayMs": {
+      "title": "Delay between requests (ms)",
+      "type": "integer",
+      "description": "Politeness delay between each HTTP request to avoid hammering the state's server.",
+      "default": 300,
+      "editor": "number"
+    },
+    "notFoundIndicatorText": {
+      "title": "Text indicating 'entity not found'",
+      "type": "string",
+      "description": "A string that appears on the page when an entity ID doesn't exist. Used to detect misses.",
+      "editor": "textfield",
+      "example": "No records found"
+    },
+    "selectors": {
+      "title": "CSS selectors (JSON object)",
+      "type": "object",
+      "description": "CSS selectors for extracting fields from the entity detail HTML. Keys: businessName, entityType, status, filingDate, streetAddress, city, state, zip, registeredAgent.",
+      "editor": "json",
+      "example": {
+        "businessName": ".entity-name",
+        "entityType": ".entity-type",
+        "filingDate": ".filing-date"
+      }
+    },
+    "supabaseUrl": {
+      "title": "Supabase URL",
+      "type": "string",
+      "editor": "textfield",
+      "isSecret": false
+    },
+    "supabaseServiceKey": {
+      "title": "Supabase service role key",
+      "type": "string",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "calibrationMode": {
+      "title": "Calibration mode",
+      "type": "boolean",
+      "description": "Dumps raw HTML and selector attempts for the first 5 IDs checked, without upserting. Use this to discover the real page structure and fix selectors.",
+      "default": false,
+      "editor": "checkbox"
+    },
+    "dryRun": {
+      "title": "Dry run",
+      "type": "boolean",
+      "description": "Parse and normalise but do NOT upsert to Supabase.",
+      "default": false,
+      "editor": "checkbox"
+    }
+  },
+  "required": ["sourceState", "idUrlTemplate", "supabaseUrl", "supabaseServiceKey"]
+}
