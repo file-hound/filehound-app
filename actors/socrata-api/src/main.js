@@ -234,7 +234,7 @@ function groupOregonRecords(records) {
   return Array.from(byRegistryNumber.values());
 }
 
-
+function normalise(record, { sourceState, entityNameField, entityIdField, dateField }) {
   const entityName = record[entityNameField]?.trim()
     || record.fictitious_name?.trim()
     || record.orig_lp_name?.trim();
