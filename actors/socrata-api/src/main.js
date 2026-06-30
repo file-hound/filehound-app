@@ -204,6 +204,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
   // Address — covers NY (filer_addr1), CO (principaladdress1), OR (address_line1)
   const streetAddress = record.filer_addr1?.trim()
     || record.principaladdress1?.trim()
+    || record.billingstreet?.trim()
     || record.business_street?.trim()
     || record.address_line1?.trim()
     || record.street_address?.trim()
@@ -211,6 +212,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
 
   const city = record.filer_city?.trim()
     || record.principalcity?.trim()
+    || record.billingcity?.trim()
     || record.business_city?.trim()
     || record.city?.trim()
     || '';
@@ -219,6 +221,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
     || record.principalzipcode?.trim()
     || record.zip?.trim()
     || record.zip_code?.trim()
+    || record.billingpostalcode?.trim()
     || record.business_zip?.trim()
     || '';
 
@@ -228,12 +231,13 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
 
   const stateOfFormation = record.for_juris?.trim()
     || record.jurisdictonofformation?.trim()  // CO field (note typo in source data)
+    || record.state_or_territory_formation?.trim()
     || record.state_of_formation?.trim()
     || sourceState;
 
   return {
     business_name:         entityName,
-    entity_type:           mapEntityType(record.filing_type, record.entitytype || record.entity_type),
+    entity_type:           mapEntityType(record.filing_type || record.business_type, record.entitytype || record.entity_type || record.business_type),
     filing_date:           filingDate,
     street_address:        streetAddress,
     city,
