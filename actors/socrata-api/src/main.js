@@ -11,13 +11,17 @@
  *   - entityNameField: Field name for the business name
  *   - entityIdField:   Field name for the unique entity ID
  *
- * Known Socrata states and their endpoints:
- *   NY: https://data.ny.gov/resource/k4vb-judh.json  (date: filing_date, name: corp_name, id: dos_id)
- *   CO: https://data.colorado.gov/resource/...        (verify endpoint and fields)
- *   CT: https://data.ct.gov/resource/...              (verify endpoint and fields)
- *   OR: https://data.oregon.gov/resource/qzxy-edyf.json (date: registry_date, name: business_name, id: ...)
- *   IA: https://data.iowa.gov/resource/...            (verify endpoint and fields)
- *   PA: https://data.pa.gov/resource/xvd7-5r2c.json  (date: creation_date, name: business_name, id: ...)
+ * Verified state configurations:
+ *   NY: https://data.ny.gov/resource/k4vb-judh.json
+ *       date: filing_date | name: corp_name | id: dos_id | newEntitiesOnly: true
+ *   CO: https://data.colorado.gov/resource/4ykn-tg5h.json
+ *       date: entityformdate | name: entityname | id: entityid | newEntitiesOnly: false
+ *   OR: https://data.oregon.gov/resource/qzxy-edyf.json
+ *       date: registry_date | name: business_name | id: registry_nbr | newEntitiesOnly: false
+ *   CT: https://data.ct.gov/resource/... (verify endpoint and fields)
+ *   IA: https://data.iowa.gov/resource/... (verify endpoint and fields)
+ *   PA: https://data.pa.gov/resource/xvd7-5r2c.json
+ *       date: creation_date | name: business_name | id: filing_number | newEntitiesOnly: false
  */
 
 import { Actor } from 'apify';
@@ -31,7 +35,10 @@ if (typeof globalThis.WebSocket === 'undefined') {
 
 const SOURCE_STATE_DEFAULT = 'NY';
 
-// ─── Filing types that represent new business formations ─────────────────────
+// ─── Filing types that represent new business formations (NY-style event datasets) ──
+// Only used when newEntitiesOnly: true. NY's dataset contains all filing events
+// (renewals, amendments etc), so we filter to formation events only.
+// CO, OR, PA datasets contain entity records not events — set newEntitiesOnly: false.
 const NEW_ENTITY_FILING_TYPES = new Set([
   'ARTICLES OF ORGANIZATION',
   'CERTIFICATE OF INCORPORATION',
@@ -41,8 +48,7 @@ const NEW_ENTITY_FILING_TYPES = new Set([
   'NEW FILING',
 ]);
 
-// Priority order for deduplication — when an entity has multiple filing types
-// on the same day, keep the one highest on this list.
+// Priority order for dedup — when same entity has multiple filings on same day
 const FILING_PRIORITY = [
   'ARTICLES OF ORGANIZATION',
   'CERTIFICATE OF INCORPORATION',
@@ -51,10 +57,63 @@ const FILING_PRIORITY = [
   'CERTIFICATE OF PUBLICATION',
 ];
 
+// ─── Entity type code mappings ────────────────────────────────────────────────
+// Handles both NY's descriptive strings and CO's short codes
+const ENTITY_TYPE_MAP = {
+  // NY filing type → entity type
+  'ARTICLES OF ORGANIZATION':     'LLC',
+  'CERTIFICATE OF INCORPORATION': 'Corporation',
+  'APPLICATION OF AUTHORITY':     'Foreign Entity',
+  'CERTIFICATE OF PUBLICATION':   'LLC',
+  'ARTICLES OF INCORPORATION':    'Corporation',
+  // CO entity type codes
+  'DLLC':  'LLC',
+  'FLLC':  'Foreign LLC',
+  'DCORP': 'Corporation',
+  'FCORP': 'Foreign Corporation',
+  'DLP':   'Limited Partnership',
+  'FLP':   'Foreign Limited Partnership',
+  'DLLP':  'Limited Liability Partnership',
+  'FLLP':  'Foreign Limited Liability Partnership',
+  'DNPC':  'Non-Profit Corporation',
+  'FNPC':  'Foreign Non-Profit Corporation',
+  'DCOOP': 'Cooperative',
+  'DBEN':  'Benefit Corporation',
+  // OR entity type values (verify on calibration)
+  'LLC':         'LLC',
+  'CORP':        'Corporation',
+  'LP':          'Limited Partnership',
+  'LLP':         'Limited Liability Partnership',
+  'NONPROFIT':   'Non-Profit Corporation',
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function todayEastern() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+/**
+ * Parse a date string in any common format to YYYY-MM-DD.
+ * Handles: ISO timestamps, YYYY-MM-DD, MM/DD/YYYY (CO format).
+ */
+function parseToIsoDate(raw) {
+  if (!raw) return null;
+  const s = raw.trim();
+
+  // ISO timestamp: "2026-06-26T00:00:00.000"
+  if (s.includes('T')) return s.split('T')[0];
+
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // MM/DD/YYYY (Colorado format)
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [mm, dd, yyyy] = s.split('/');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return null;
 }
 
 function buildSocrataUrl(baseUrl, dateField, targetDate, offset = 0, limit = 10000) {
@@ -92,46 +151,98 @@ async function fetchAllRecords(baseUrl, dateField, targetDate) {
   return allRecords;
 }
 
-function normalise(record, { sourceState, entityNameField, entityIdField }) {
+function mapEntityType(filingType, entityType) {
+  return ENTITY_TYPE_MAP[filingType?.trim()]
+    ?? ENTITY_TYPE_MAP[entityType?.trim()]
+    ?? entityType?.trim()
+    ?? filingType?.trim()
+    ?? 'Other';
+}
+
+/**
+ * Build registered agent display name from whatever fields are available.
+ * CO uses separate first/last name fields or an org name field.
+ * NY uses sop_name. OR uses registered_agent_name.
+ */
+function parseAgentName(record) {
+  // Org name (CO: agentorganizationname)
+  if (record.agentorganizationname?.trim()) return record.agentorganizationname.trim();
+
+  // Individual name parts (CO: agentfirstname + agentlastname)
+  const firstName = record.agentfirstname?.trim() || '';
+  const lastName  = record.agentlastname?.trim()  || '';
+  if (firstName || lastName) return [firstName, lastName].filter(Boolean).join(' ');
+
+  // NY: sop_name
+  if (record.sop_name?.trim()) return record.sop_name.trim();
+
+  // Generic fallback
+  return record.registered_agent_name?.trim()
+    || record.agent_name?.trim()
+    || '';
+}
+
+function normalise(record, { sourceState, entityNameField, entityIdField, dateField }) {
   const entityName = record[entityNameField]?.trim()
     || record.fictitious_name?.trim()
     || record.orig_lp_name?.trim();
 
   const stateFilingId = record[entityIdField]?.trim();
-  const filingDate    = record.filing_date?.split('T')[0]
-    || record.registry_date?.split('T')[0]
-    || record.creation_date?.split('T')[0]
-    || record.entityformationdate?.split('T')[0]
+
+  // Try the configured dateField first, then fallbacks for each state
+  const rawDate   = record[dateField]
+    || record.filing_date
+    || record.registry_date
+    || record.creation_date
+    || record.entityformdate      // CO
+    || record.entityformationdate // alt CO
     || null;
+  const filingDate = parseToIsoDate(rawDate);
 
   if (!entityName || !stateFilingId || !filingDate) return null;
 
+  // Address — covers NY (filer_addr1), CO (principaladdress1), OR (address_line1)
+  const streetAddress = record.filer_addr1?.trim()
+    || record.principaladdress1?.trim()
+    || record.address_line1?.trim()
+    || record.street_address?.trim()
+    || '';
+
+  const city = record.filer_city?.trim()
+    || record.principalcity?.trim()
+    || record.city?.trim()
+    || '';
+
+  const zip = record.filer_zip5?.trim()
+    || record.principalzipcode?.trim()
+    || record.zip?.trim()
+    || record.zip_code?.trim()
+    || '';
+
+  const county = record.cnty_prin_ofc?.trim()
+    || record.county?.trim()
+    || '';
+
+  const stateOfFormation = record.for_juris?.trim()
+    || record.jurisdictonofformation?.trim()  // CO field (note typo in source data)
+    || record.state_of_formation?.trim()
+    || sourceState;
+
   return {
     business_name:         entityName,
-    entity_type:           mapEntityType(record.filing_type, record.entity_type),
+    entity_type:           mapEntityType(record.filing_type, record.entitytype || record.entity_type),
     filing_date:           filingDate,
-    street_address:        record.filer_addr1?.trim() || record.address_line1?.trim() || record.street_address?.trim() || '',
-    city:                  record.filer_city?.trim() || record.city?.trim() || '',
+    street_address:        streetAddress,
+    city,
     state:                 sourceState,
-    zip:                   record.filer_zip5?.trim() || record.zip?.trim() || record.zip_code?.trim() || '',
-    county:                record.cnty_prin_ofc?.trim() || record.county?.trim() || '',
+    zip,
+    county,
     source_state:          sourceState,
     state_filing_id:       stateFilingId,
-    state_of_formation:    record.for_juris?.trim() || record.state_of_formation?.trim() || sourceState,
-    registered_agent_name: record.sop_name?.trim() || record.registered_agent_name?.trim() || '',
+    state_of_formation:    stateOfFormation,
+    registered_agent_name: parseAgentName(record),
     raw_data:              { ...record },
   };
-}
-
-function mapEntityType(filingType, entityType) {
-  const map = {
-    'ARTICLES OF ORGANIZATION':     'LLC',
-    'CERTIFICATE OF INCORPORATION': 'Corporation',
-    'APPLICATION OF AUTHORITY':     'Foreign Entity',
-    'CERTIFICATE OF PUBLICATION':   'LLC',
-    'ARTICLES OF INCORPORATION':    'Corporation',
-  };
-  return map[filingType?.trim()] ?? entityType?.trim() ?? filingType?.trim() ?? 'Other';
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
@@ -184,16 +295,17 @@ try {
     const sample = rawRecords.slice(0, 5);
     for (const [i, rec] of sample.entries()) {
       console.log(`Record ${i + 1}:`, JSON.stringify(rec, null, 2));
+      console.log(`  → normalised:`, JSON.stringify(normalise(rec, { sourceState, entityNameField, entityIdField, dateField }), null, 2));
     }
     await Actor.pushData(sample.map((raw, i) => ({
       record_index: i + 1,
       raw,
-      normalised: normalise(raw, { sourceState, entityNameField, entityIdField }),
+      normalised: normalise(raw, { sourceState, entityNameField, entityIdField, dateField }),
     })));
     await Actor.exit();
   }
 
-  // ── 3. Filter to new formations only ────────────────────────────────────────
+  // ── 3. Filter to new formations only (NY-style event datasets) ──────────────
   const filtered = newEntitiesOnly
     ? rawRecords.filter(r => NEW_ENTITY_FILING_TYPES.has(r.filing_type?.trim()?.toUpperCase()))
     : rawRecords;
@@ -203,16 +315,12 @@ try {
   // ── 4. Normalise ────────────────────────────────────────────────────────────
   const normalised = [];
   for (const rec of filtered) {
-    const row = normalise(rec, { sourceState, entityNameField, entityIdField });
+    const row = normalise(rec, { sourceState, entityNameField, entityIdField, dateField });
     if (row) normalised.push(row);
   }
   console.log(`Normalised ${normalised.length} valid records.`);
 
   // ── 5. Deduplicate by state_filing_id ───────────────────────────────────────
-  // An entity can have multiple filing types on the same day (e.g. Articles of
-  // Organization + Certificate of Publication in NY). Postgres cannot upsert two
-  // rows with the same conflict key in one batch — so we keep one row per entity,
-  // preferring the most foundational filing type via FILING_PRIORITY.
   const seen = new Map();
   for (const row of normalised) {
     const existing = seen.get(row.state_filing_id);
