@@ -1,0 +1,43 @@
+{
+  "title": "FileHound — Idaho SOSBiz Actor Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "targetDate": {
+      "title": "Target date",
+      "type": "string",
+      "description": "Date to fetch filings for (YYYY-MM-DD). Defaults to today (US/Mountain).",
+      "editor": "textfield",
+      "example": "2026-06-27"
+    },
+    "supabaseUrl": {
+      "title": "Supabase URL",
+      "type": "string",
+      "description": "Your Supabase project URL.",
+      "editor": "textfield",
+      "isSecret": false
+    },
+    "supabaseServiceKey": {
+      "title": "Supabase service role key",
+      "type": "string",
+      "description": "Supabase service role key (not the anon key).",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "calibrationMode": {
+      "title": "Calibration mode",
+      "type": "boolean",
+      "description": "Dumps the first 5 raw API records to the dataset without upserting.",
+      "default": false,
+      "editor": "checkbox"
+    },
+    "dryRun": {
+      "title": "Dry run",
+      "type": "boolean",
+      "description": "Parse and normalise but do NOT upsert to Supabase.",
+      "default": false,
+      "editor": "checkbox"
+    }
+  },
+  "required": ["supabaseUrl", "supabaseServiceKey"]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "filehound-idaho-sosbiz",
+  "version": "0.1.0",
+  "description": "FileHound Idaho SOSBiz actor — queries the public businesssearch JSON API by filing date",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.0.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "ws": "^8.0.0"
+  }
+}

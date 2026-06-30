@@ -1,0 +1,13 @@
+{
+  "actorSpecification": 1,
+  "name": "filehound-idaho-sosbiz",
+  "title": "FileHound — Idaho SOSBiz Actor",
+  "description": "Queries the Idaho Secretary of State's public businesssearch JSON API by filing date and upserts new filings to Supabase.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "defaultRunOptions": {
+    "build": "latest",
+    "timeoutSecs": 300,
+    "memoryMbytes": 256
+  }
+}
