@@ -204,12 +204,14 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
   // Address — covers NY (filer_addr1), CO (principaladdress1), OR (address_line1)
   const streetAddress = record.filer_addr1?.trim()
     || record.principaladdress1?.trim()
+    || record.business_street?.trim()
     || record.address_line1?.trim()
     || record.street_address?.trim()
     || '';
 
   const city = record.filer_city?.trim()
     || record.principalcity?.trim()
+    || record.business_city?.trim()
     || record.city?.trim()
     || '';
 
@@ -217,6 +219,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
     || record.principalzipcode?.trim()
     || record.zip?.trim()
     || record.zip_code?.trim()
+    || record.business_zip?.trim()
     || '';
 
   const county = record.cnty_prin_ofc?.trim()
