@@ -73,12 +73,14 @@
     "supabaseUrl": {
       "title": "Supabase URL",
       "type": "string",
+      "description": "Your Supabase project URL.",
       "editor": "textfield",
       "isSecret": false
     },
     "supabaseServiceKey": {
       "title": "Supabase service role key",
       "type": "string",
+      "description": "Supabase service role key (not the anon key).",
       "editor": "textfield",
       "isSecret": true
     },
