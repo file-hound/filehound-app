@@ -45,6 +45,13 @@
       "default": true,
       "editor": "checkbox"
     },
+    "groupMultiRowEntities": {
+      "title": "Group multi-row entities (Oregon)",
+      "type": "boolean",
+      "description": "Some states (Oregon) publish one row per 'Associated Name Type' per entity (principal address, registered agent, member, etc all separate rows sharing the same registry number). Enable this to collapse those rows into one record per entity before normalising. Required for Oregon, leave off for all other states.",
+      "default": false,
+      "editor": "checkbox"
+    },
     "targetDate": {
       "title": "Target date",
       "type": "string",

@@ -16,9 +16,12 @@
  *       date: filing_date | name: corp_name | id: dos_id | newEntitiesOnly: true
  *   CO: https://data.colorado.gov/resource/4ykn-tg5h.json
  *       date: entityformdate | name: entityname | id: entityid | newEntitiesOnly: false
- *   OR: https://data.oregon.gov/resource/qzxy-edyf.json
- *       date: registry_date | name: business_name | id: registry_nbr | newEntitiesOnly: false
- *   CT: https://data.ct.gov/resource/... (verify endpoint and fields)
+ *   CT: https://data.ct.gov/resource/n7gp-d28j.json
+ *       date: date_registration | name: name | id: id | newEntitiesOnly: false
+ *   OR: https://data.oregon.gov/resource/esjy-u4fc.json
+ *       date: registry_date | name: business_name | id: registry_number | newEntitiesOnly: false
+ *       groupMultiRowEntities: true (REQUIRED — dataset has one row per
+ *       Associated Name Type per entity; must be collapsed before normalise)
  *   IA: https://data.iowa.gov/resource/... (verify endpoint and fields)
  *   PA: https://data.pa.gov/resource/xvd7-5r2c.json
  *       date: creation_date | name: business_name | id: filing_number | newEntitiesOnly: false
@@ -176,13 +179,62 @@ function parseAgentName(record) {
   // NY: sop_name
   if (record.sop_name?.trim()) return record.sop_name.trim();
 
+  // OR: registered_agent_name (set during groupOregonRecords)
+  if (record.registered_agent_name?.trim()) return record.registered_agent_name.trim();
+
   // Generic fallback
-  return record.registered_agent_name?.trim()
-    || record.agent_name?.trim()
+  return record.agent_name?.trim()
     || '';
 }
 
-function normalise(record, { sourceState, entityNameField, entityIdField, dateField }) {
+/**
+ * Oregon's "New Businesses Registered Last Month" dataset has multiple rows
+ * per entity — one row per "Associated Name Type" (PRINCIPAL PLACE OF BUSINESS,
+ * MAILING ADDRESS, REGISTERED AGENT, MEMBER, MANAGER, etc). All rows for one
+ * entity share the same Registry Number. This collapses them into one row
+ * per entity before normalise() runs.
+ */
+function groupOregonRecords(records) {
+  const byRegistryNumber = new Map();
+
+  for (const r of records) {
+    const regNum = r['registry_number']?.trim();
+    if (!regNum) continue;
+
+    if (!byRegistryNumber.has(regNum)) {
+      byRegistryNumber.set(regNum, {
+        registry_number: regNum,
+        business_name:   r['business_name'],
+        entity_type:     r['entity_type'],
+        registry_date:   r['registry_date'],
+      });
+    }
+    const grouped = byRegistryNumber.get(regNum);
+
+    const nameType = r['associated_name_type']?.trim()?.toUpperCase();
+    const address  = r['address_']?.trim() || r['address']?.trim() || '';
+    const city     = r['city']?.trim() || '';
+    const state    = r['state']?.trim() || '';
+    const zip      = r['zip_code']?.trim() || '';
+
+    if (nameType === 'PRINCIPAL PLACE OF BUSINESS' && address) {
+      grouped.principal_address = address;
+      grouped.principal_city    = city;
+      grouped.principal_state   = state;
+      grouped.principal_zip     = zip;
+    }
+    if (nameType === 'REGISTERED AGENT') {
+      const first = r['first_name']?.trim() || '';
+      const last  = r['last_name']?.trim()  || '';
+      const org   = r['entity_of_record_name']?.trim() || '';
+      grouped.registered_agent_name = org || [first, last].filter(Boolean).join(' ');
+    }
+  }
+
+  return Array.from(byRegistryNumber.values());
+}
+
+
   const entityName = record[entityNameField]?.trim()
     || record.fictitious_name?.trim()
     || record.orig_lp_name?.trim();
@@ -201,9 +253,10 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
 
   if (!entityName || !stateFilingId || !filingDate) return null;
 
-  // Address — covers NY (filer_addr1), CO (principaladdress1), OR (address_line1)
+  // Address — covers NY (filer_addr1), CO (principaladdress1), CT (billingstreet), OR (principal_address after grouping)
   const streetAddress = record.filer_addr1?.trim()
     || record.principaladdress1?.trim()
+    || record.principal_address?.trim()
     || record.billingstreet?.trim()
     || record.business_street?.trim()
     || record.address_line1?.trim()
@@ -212,6 +265,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
 
   const city = record.filer_city?.trim()
     || record.principalcity?.trim()
+    || record.principal_city?.trim()
     || record.billingcity?.trim()
     || record.business_city?.trim()
     || record.city?.trim()
@@ -219,6 +273,7 @@ function normalise(record, { sourceState, entityNameField, entityIdField, dateFi
 
   const zip = record.filer_zip5?.trim()
     || record.principalzipcode?.trim()
+    || record.principal_zip?.trim()
     || record.zip?.trim()
     || record.zip_code?.trim()
     || record.billingpostalcode?.trim()
@@ -264,6 +319,7 @@ const {
   entityNameField = 'corp_name',
   entityIdField   = 'dos_id',
   newEntitiesOnly = true,
+  groupMultiRowEntities = false,
   targetDate      = todayEastern(),
   supabaseUrl,
   supabaseServiceKey,
@@ -296,10 +352,19 @@ try {
     await Actor.exit();
   }
 
+  // ── 1b. Group multi-row entities (Oregon: one row per Associated Name Type) ─
+  const workingRecords = groupMultiRowEntities
+    ? groupOregonRecords(rawRecords)
+    : rawRecords;
+
+  if (groupMultiRowEntities) {
+    console.log(`Grouped ${rawRecords.length} raw rows into ${workingRecords.length} unique entities.`);
+  }
+
   // ── 2. Calibration mode ─────────────────────────────────────────────────────
   if (calibrationMode) {
     console.log('\n--- CALIBRATION MODE ---');
-    const sample = rawRecords.slice(0, 5);
+    const sample = workingRecords.slice(0, 5);
     for (const [i, rec] of sample.entries()) {
       console.log(`Record ${i + 1}:`, JSON.stringify(rec, null, 2));
       console.log(`  → normalised:`, JSON.stringify(normalise(rec, { sourceState, entityNameField, entityIdField, dateField }), null, 2));
@@ -314,10 +379,10 @@ try {
 
   // ── 3. Filter to new formations only (NY-style event datasets) ──────────────
   const filtered = newEntitiesOnly
-    ? rawRecords.filter(r => NEW_ENTITY_FILING_TYPES.has(r.filing_type?.trim()?.toUpperCase()))
-    : rawRecords;
+    ? workingRecords.filter(r => NEW_ENTITY_FILING_TYPES.has(r.filing_type?.trim()?.toUpperCase()))
+    : workingRecords;
 
-  console.log(`After filtering: ${filtered.length} new entity filings (from ${rawRecords.length} total).`);
+  console.log(`After filtering: ${filtered.length} new entity filings (from ${workingRecords.length} total).`);
 
   // ── 4. Normalise ────────────────────────────────────────────────────────────
   const normalised = [];
